@@ -1,7 +1,24 @@
 import { restoreCache, saveCache } from "@actions/cache";
+import * as cache from "@actions/cache";
+import type { Cache } from "../types/aliases.js";
+
 import { getInput, getState, info, saveState, setOutput } from "@actions/core";
 
 import { execBashCommand } from "./util.js";
+
+interface ArtifactCacheEntry {
+  cacheKey?: string;
+  scope?: string;
+  cacheVersion?: string;
+  creationTime?: string;
+  archiveLocation?: string;
+}
+interface CacheWithGetCacheEntry extends Cache {
+  getCacheEntry(
+    keys: string[],
+    paths: string[]
+  ): Promise<ArtifactCacheEntry | null>;
+}
 
 const CACHE_HIT = "cache-hit";
 const DOCKER_IMAGES_LIST = "docker-images-list";
@@ -35,6 +52,21 @@ const saveDockerImages = async (): Promise<void> => {
     info(
       `Cache miss occurred on the primary key ${key}. Not saving cache as ` +
         "read-only option was selected."
+    );
+    /* Access the private method, getCacheEntry, internal to the GitHub Actions
+     * cache action. Use it to check if a cache with our key has been saved between
+     * when we checked in loadDockerImages and now.
+     */
+  } else if (
+    await (<CacheWithGetCacheEntry>cache)["getCacheEntry"](
+      [key],
+      [DOCKER_IMAGES_PATH]
+    )
+  ) {
+    info(
+      "A cache miss occurred in loadDockerImages; subsequently a cache with " +
+        "a matching key was saved. This can occur when docker-cache is used for " +
+        "multiple jobs run in parallel. Not saving cache."
     );
   } else {
     const preexistingImages = getState(DOCKER_IMAGES_LIST).split("\n");
